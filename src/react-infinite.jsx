@@ -29,7 +29,8 @@ var Infinite = React.createClass({
       React.PropTypes.arrayOf(React.PropTypes.number)
     ]).isRequired,
     // This is the total height of the visible window.
-    containerHeight: React.PropTypes.number.isRequired,
+    containerHeight: React.PropTypes.number,
+    containerWindowTop: React.PropTypes.number,
 
     infiniteLoadBeginBottomOffset: React.PropTypes.number,
     onInfiniteLoad: React.PropTypes.func,
@@ -118,13 +119,13 @@ var Infinite = React.createClass({
   getPreloadBatchSizeFromProps(props) {
     return props.preloadBatchSize ?
       props.preloadBatchSize :
-      props.containerHeight / 2;
+      (props.containerHeight || window.innerHeight) / 2;
   },
 
   getPreloadAdditionalHeightFromProps(props) {
     return props.preloadAdditionalHeight ?
       props.preloadAdditionalHeight :
-      props.containerHeight;
+      (props.containerHeight || window.innerHeight);
   },
 
   componentDidUpdate(prevProps, prevState) {
@@ -142,7 +143,7 @@ var Infinite = React.createClass({
   },
 
   getScrollTop() {
-    return this.refs.scrollable.getDOMNode().scrollTop;
+    return (this.props.containerWindowTop) ? (window.scrollY - this.props.containerWindowTop) : this.refs.scrollable.getDOMNode().scrollTop;
   },
 
   // Given the scrollTop of the container, computes the state the
@@ -164,12 +165,16 @@ var Infinite = React.createClass({
   },
 
   infiniteHandleScroll(e) {
-    if (e.target !== this.refs.scrollable.getDOMNode()) {
+    if (!this.props.containerWindowTop && e.target !== this.refs.scrollable.getDOMNode()) {
       return;
     }
+//    if (this.props.containerWindowTop && e.target !== window) {
+//      console.log("nothing to do window")
+//      return;
+//    }
 
     this.props.handleScroll(this.refs.scrollable.getDOMNode());
-    this.handleScroll(e.target.scrollTop);
+    this.handleScroll(this.getScrollTop());
   },
 
   manageScrollTimeouts() {
@@ -199,7 +204,7 @@ var Infinite = React.createClass({
     this.setStateFromScrollTop(scrollTop);
     var infiniteScrollBottomLimit = scrollTop >
         (this.state.infiniteComputer.getTotalScrollableHeight() -
-          this.props.containerHeight -
+          (this.props.containerHeight || window.innerHeight) -
           this.props.infiniteLoadBeginBottomOffset);
     if (infiniteScrollBottomLimit && !this.state.isInfiniteLoading) {
       this.setState({
@@ -211,11 +216,11 @@ var Infinite = React.createClass({
 
   // Helpers for React styles.
   buildScrollableStyle() {
-    return {
+    return this.props.containerHeight ? {
       height: this.props.containerHeight,
       overflowX: 'hidden',
       overflowY: 'scroll'
-    };
+    } : {};
   },
 
   buildHeightStyle(height) {
@@ -225,6 +230,13 @@ var Infinite = React.createClass({
     };
   },
 
+  componentDidMount: function () {
+    if(this.props.containerWindowTop){window.addEventListener('scroll', this.infiniteHandleScroll)}
+  },
+
+  componentWillUnmount: function () {
+    if(this.props.containerWindowTop) window.removeEventListener('scroll', this.infiniteHandleScroll)
+  },
   render() {
     var displayables = this.props.children.slice(this.state.displayIndexStart,
                                                  this.state.displayIndexEnd + 1);

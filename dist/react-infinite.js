@@ -31,7 +31,8 @@ var Infinite = React.createClass({displayName: "Infinite",
       React.PropTypes.arrayOf(React.PropTypes.number)
     ]).isRequired,
     // This is the total height of the visible window.
-    containerHeight: React.PropTypes.number.isRequired,
+    containerHeight: React.PropTypes.number,
+    containerWindowTop: React.PropTypes.number,
 
     infiniteLoadBeginBottomOffset: React.PropTypes.number,
     onInfiniteLoad: React.PropTypes.func,
@@ -120,13 +121,13 @@ var Infinite = React.createClass({displayName: "Infinite",
   getPreloadBatchSizeFromProps:function(props) {
     return props.preloadBatchSize ?
       props.preloadBatchSize :
-      props.containerHeight / 2;
+      (props.containerHeight || window.innerHeight) / 2;
   },
 
   getPreloadAdditionalHeightFromProps:function(props) {
     return props.preloadAdditionalHeight ?
       props.preloadAdditionalHeight :
-      props.containerHeight;
+      (props.containerHeight || window.innerHeight);
   },
 
   componentDidUpdate:function(prevProps, prevState) {
@@ -144,7 +145,7 @@ var Infinite = React.createClass({displayName: "Infinite",
   },
 
   getScrollTop:function() {
-    return this.refs.scrollable.getDOMNode().scrollTop;
+    return (this.props.containerWindowTop) ? (window.scrollY - this.props.containerWindowTop) : this.refs.scrollable.getDOMNode().scrollTop;
   },
 
   // Given the scrollTop of the container, computes the state the
@@ -166,12 +167,16 @@ var Infinite = React.createClass({displayName: "Infinite",
   },
 
   infiniteHandleScroll:function(e) {
-    if (e.target !== this.refs.scrollable.getDOMNode()) {
+    if (!this.props.containerWindowTop && e.target !== this.refs.scrollable.getDOMNode()) {
       return;
     }
+//    if (this.props.containerWindowTop && e.target !== window) {
+//      console.log("nothing to do window")
+//      return;
+//    }
 
     this.props.handleScroll(this.refs.scrollable.getDOMNode());
-    this.handleScroll(e.target.scrollTop);
+    this.handleScroll(this.getScrollTop());
   },
 
   manageScrollTimeouts:function() {
@@ -201,7 +206,7 @@ var Infinite = React.createClass({displayName: "Infinite",
     this.setStateFromScrollTop(scrollTop);
     var infiniteScrollBottomLimit = scrollTop >
         (this.state.infiniteComputer.getTotalScrollableHeight() -
-          this.props.containerHeight -
+          (this.props.containerHeight || window.innerHeight) -
           this.props.infiniteLoadBeginBottomOffset);
     if (infiniteScrollBottomLimit && !this.state.isInfiniteLoading) {
       this.setState({
@@ -213,11 +218,11 @@ var Infinite = React.createClass({displayName: "Infinite",
 
   // Helpers for React styles.
   buildScrollableStyle:function() {
-    return {
+    return this.props.containerHeight ? {
       height: this.props.containerHeight,
       overflowX: 'hidden',
       overflowY: 'scroll'
-    };
+    } : {};
   },
 
   buildHeightStyle:function(height) {
@@ -227,6 +232,13 @@ var Infinite = React.createClass({displayName: "Infinite",
     };
   },
 
+  componentDidMount: function () {
+    if(this.props.containerWindowTop){window.addEventListener('scroll', this.infiniteHandleScroll)}
+  },
+
+  componentWillUnmount: function () {
+    if(this.props.containerWindowTop) window.removeEventListener('scroll', this.infiniteHandleScroll)
+  },
   render:function() {
     var displayables = this.props.children.slice(this.state.displayIndexStart,
                                                  this.state.displayIndexEnd + 1);
@@ -264,9 +276,9 @@ global.Infinite = Infinite;
 
 
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{"./computers/array_infinite_computer.js":5,"./computers/constant_infinite_computer.js":6,"lodash.isarray":2,"lodash.isfinite":3,"react":undefined}],2:[function(require,module,exports){
+},{"./computers/array_infinite_computer.js":4,"./computers/constant_infinite_computer.js":5,"lodash.isarray":2,"lodash.isfinite":3,"react":undefined}],2:[function(require,module,exports){
 /**
- * lodash 3.0.3 (Custom Build) <https://lodash.com/>
+ * lodash 3.0.4 (Custom Build) <https://lodash.com/>
  * Build: `lodash modern modularize exports="npm" -o ./`
  * Copyright 2012-2015 The Dojo Foundation <http://dojofoundation.org/>
  * Based on Underscore.js 1.8.3 <http://underscorejs.org/LICENSE>
@@ -278,31 +290,8 @@ global.Infinite = Infinite;
 var arrayTag = '[object Array]',
     funcTag = '[object Function]';
 
-/**
- * Used to match `RegExp` [special characters](http://www.regular-expressions.info/characters.html#special).
- * In addition to special characters the forward slash is escaped to allow for
- * easier `eval` use and `Function` compilation.
- */
-var reRegExpChars = /[.*+?^${}()|[\]\/\\]/g,
-    reHasRegExpChars = RegExp(reRegExpChars.source);
-
 /** Used to detect host constructors (Safari > 5). */
 var reIsHostCtor = /^\[object .+?Constructor\]$/;
-
-/**
- * Converts `value` to a string if it's not one. An empty string is returned
- * for `null` or `undefined` values.
- *
- * @private
- * @param {*} value The value to process.
- * @returns {string} Returns the string.
- */
-function baseToString(value) {
-  if (typeof value == 'string') {
-    return value;
-  }
-  return value == null ? '' : (value + '');
-}
 
 /**
  * Checks if `value` is object-like.
@@ -325,14 +314,14 @@ var fnToString = Function.prototype.toString;
 var hasOwnProperty = objectProto.hasOwnProperty;
 
 /**
- * Used to resolve the [`toStringTag`](https://people.mozilla.org/~jorendorff/es6-draft.html#sec-object.prototype.tostring)
+ * Used to resolve the [`toStringTag`](http://ecma-international.org/ecma-262/6.0/#sec-object.prototype.tostring)
  * of values.
  */
 var objToString = objectProto.toString;
 
 /** Used to detect if a method is native. */
 var reIsNative = RegExp('^' +
-  escapeRegExp(fnToString.call(hasOwnProperty))
+  fnToString.call(hasOwnProperty).replace(/[\\^$.*+?()[\]{}|]/g, '\\$&')
   .replace(/hasOwnProperty|(function).*?(?=\\\()| for .+?(?=\\\])/g, '$1.*?') + '$'
 );
 
@@ -340,7 +329,7 @@ var reIsNative = RegExp('^' +
 var nativeIsArray = getNative(Array, 'isArray');
 
 /**
- * Used as the [maximum length](https://people.mozilla.org/~jorendorff/es6-draft.html#sec-number.max_safe_integer)
+ * Used as the [maximum length](http://ecma-international.org/ecma-262/6.0/#sec-number.max_safe_integer)
  * of an array-like value.
  */
 var MAX_SAFE_INTEGER = 9007199254740991;
@@ -361,7 +350,7 @@ function getNative(object, key) {
 /**
  * Checks if `value` is a valid array-like length.
  *
- * **Note:** This function is based on [`ToLength`](https://people.mozilla.org/~jorendorff/es6-draft.html#sec-tolength).
+ * **Note:** This function is based on [`ToLength`](http://ecma-international.org/ecma-262/6.0/#sec-tolength).
  *
  * @private
  * @param {*} value The value to check.
@@ -392,6 +381,56 @@ var isArray = nativeIsArray || function(value) {
 };
 
 /**
+ * Checks if `value` is classified as a `Function` object.
+ *
+ * @static
+ * @memberOf _
+ * @category Lang
+ * @param {*} value The value to check.
+ * @returns {boolean} Returns `true` if `value` is correctly classified, else `false`.
+ * @example
+ *
+ * _.isFunction(_);
+ * // => true
+ *
+ * _.isFunction(/abc/);
+ * // => false
+ */
+function isFunction(value) {
+  // The use of `Object#toString` avoids issues with the `typeof` operator
+  // in older versions of Chrome and Safari which return 'function' for regexes
+  // and Safari 8 equivalents which return 'object' for typed array constructors.
+  return isObject(value) && objToString.call(value) == funcTag;
+}
+
+/**
+ * Checks if `value` is the [language type](https://es5.github.io/#x8) of `Object`.
+ * (e.g. arrays, functions, objects, regexes, `new Number(0)`, and `new String('')`)
+ *
+ * @static
+ * @memberOf _
+ * @category Lang
+ * @param {*} value The value to check.
+ * @returns {boolean} Returns `true` if `value` is an object, else `false`.
+ * @example
+ *
+ * _.isObject({});
+ * // => true
+ *
+ * _.isObject([1, 2, 3]);
+ * // => true
+ *
+ * _.isObject(1);
+ * // => false
+ */
+function isObject(value) {
+  // Avoid a V8 JIT bug in Chrome 19-20.
+  // See https://code.google.com/p/v8/issues/detail?id=2291 for more details.
+  var type = typeof value;
+  return !!value && (type == 'object' || type == 'function');
+}
+
+/**
  * Checks if `value` is a native function.
  *
  * @static
@@ -411,31 +450,10 @@ function isNative(value) {
   if (value == null) {
     return false;
   }
-  if (objToString.call(value) == funcTag) {
+  if (isFunction(value)) {
     return reIsNative.test(fnToString.call(value));
   }
   return isObjectLike(value) && reIsHostCtor.test(value);
-}
-
-/**
- * Escapes the `RegExp` special characters "\", "/", "^", "$", ".", "|", "?",
- * "*", "+", "(", ")", "[", "]", "{" and "}" in `string`.
- *
- * @static
- * @memberOf _
- * @category String
- * @param {string} [string=''] The string to escape.
- * @returns {string} Returns the escaped string.
- * @example
- *
- * _.escapeRegExp('[lodash](https://lodash.com/)');
- * // => '\[lodash\]\(https:\/\/lodash\.com\/\)'
- */
-function escapeRegExp(string) {
-  string = baseToString(string);
-  return (string && reHasRegExpChars.test(string))
-    ? string.replace(reRegExpChars, '\\$&')
-    : string;
 }
 
 module.exports = isArray;
@@ -443,23 +461,21 @@ module.exports = isArray;
 },{}],3:[function(require,module,exports){
 (function (global){
 /**
- * lodash 3.1.0 (Custom Build) <https://lodash.com/>
+ * lodash 3.2.0 (Custom Build) <https://lodash.com/>
  * Build: `lodash modern modularize exports="npm" -o ./`
  * Copyright 2012-2015 The Dojo Foundation <http://dojofoundation.org/>
  * Based on Underscore.js 1.8.3 <http://underscorejs.org/LICENSE>
  * Copyright 2009-2015 Jeremy Ashkenas, DocumentCloud and Investigative Reporters & Editors
  * Available under MIT license <https://lodash.com/license>
  */
-var getNative = require('lodash._getnative');
 
 /* Native method references for those with the same name as other `lodash` methods. */
-var nativeIsFinite = global.isFinite,
-    nativeNumIsFinite = getNative(Number, 'isFinite');
+var nativeIsFinite = global.isFinite;
 
 /**
  * Checks if `value` is a finite primitive number.
  *
- * **Note:** This method is based on [`Number.isFinite`](https://people.mozilla.org/~jorendorff/es6-draft.html#sec-number.isfinite).
+ * **Note:** This method is based on [`Number.isFinite`](http://ecma-international.org/ecma-262/6.0/#sec-number.isfinite).
  *
  * @static
  * @memberOf _
@@ -483,147 +499,14 @@ var nativeIsFinite = global.isFinite,
  * _.isFinite(Infinity);
  * // => false
  */
-var isFinite = nativeNumIsFinite || function(value) {
+function isFinite(value) {
   return typeof value == 'number' && nativeIsFinite(value);
-};
+}
 
 module.exports = isFinite;
 
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{"lodash._getnative":4}],4:[function(require,module,exports){
-/**
- * lodash 3.9.0 (Custom Build) <https://lodash.com/>
- * Build: `lodash modern modularize exports="npm" -o ./`
- * Copyright 2012-2015 The Dojo Foundation <http://dojofoundation.org/>
- * Based on Underscore.js 1.8.3 <http://underscorejs.org/LICENSE>
- * Copyright 2009-2015 Jeremy Ashkenas, DocumentCloud and Investigative Reporters & Editors
- * Available under MIT license <https://lodash.com/license>
- */
-
-/** `Object#toString` result references. */
-var funcTag = '[object Function]';
-
-/**
- * Used to match `RegExp` [special characters](http://www.regular-expressions.info/characters.html#special).
- * In addition to special characters the forward slash is escaped to allow for
- * easier `eval` use and `Function` compilation.
- */
-var reRegExpChars = /[.*+?^${}()|[\]\/\\]/g,
-    reHasRegExpChars = RegExp(reRegExpChars.source);
-
-/** Used to detect host constructors (Safari > 5). */
-var reIsHostCtor = /^\[object .+?Constructor\]$/;
-
-/**
- * Converts `value` to a string if it's not one. An empty string is returned
- * for `null` or `undefined` values.
- *
- * @private
- * @param {*} value The value to process.
- * @returns {string} Returns the string.
- */
-function baseToString(value) {
-  if (typeof value == 'string') {
-    return value;
-  }
-  return value == null ? '' : (value + '');
-}
-
-/**
- * Checks if `value` is object-like.
- *
- * @private
- * @param {*} value The value to check.
- * @returns {boolean} Returns `true` if `value` is object-like, else `false`.
- */
-function isObjectLike(value) {
-  return !!value && typeof value == 'object';
-}
-
-/** Used for native method references. */
-var objectProto = Object.prototype;
-
-/** Used to resolve the decompiled source of functions. */
-var fnToString = Function.prototype.toString;
-
-/** Used to check objects for own properties. */
-var hasOwnProperty = objectProto.hasOwnProperty;
-
-/**
- * Used to resolve the [`toStringTag`](https://people.mozilla.org/~jorendorff/es6-draft.html#sec-object.prototype.tostring)
- * of values.
- */
-var objToString = objectProto.toString;
-
-/** Used to detect if a method is native. */
-var reIsNative = RegExp('^' +
-  escapeRegExp(fnToString.call(hasOwnProperty))
-  .replace(/hasOwnProperty|(function).*?(?=\\\()| for .+?(?=\\\])/g, '$1.*?') + '$'
-);
-
-/**
- * Gets the native function at `key` of `object`.
- *
- * @private
- * @param {Object} object The object to query.
- * @param {string} key The key of the method to get.
- * @returns {*} Returns the function if it's native, else `undefined`.
- */
-function getNative(object, key) {
-  var value = object == null ? undefined : object[key];
-  return isNative(value) ? value : undefined;
-}
-
-/**
- * Checks if `value` is a native function.
- *
- * @static
- * @memberOf _
- * @category Lang
- * @param {*} value The value to check.
- * @returns {boolean} Returns `true` if `value` is a native function, else `false`.
- * @example
- *
- * _.isNative(Array.prototype.push);
- * // => true
- *
- * _.isNative(_);
- * // => false
- */
-function isNative(value) {
-  if (value == null) {
-    return false;
-  }
-  if (objToString.call(value) == funcTag) {
-    return reIsNative.test(fnToString.call(value));
-  }
-  return isObjectLike(value) && reIsHostCtor.test(value);
-}
-
-/**
- * Escapes the `RegExp` special characters "\", "/", "^", "$", ".", "|", "?",
- * "*", "+", "(", ")", "[", "]", "{" and "}" in `string`.
- *
- * @static
- * @memberOf _
- * @category String
- * @param {string} [string=''] The string to escape.
- * @returns {string} Returns the escaped string.
- * @example
- *
- * _.escapeRegExp('[lodash](https://lodash.com/)');
- * // => '\[lodash\]\(https:\/\/lodash\.com\/\)'
- */
-function escapeRegExp(string) {
-  string = baseToString(string);
-  return (string && reHasRegExpChars.test(string))
-    ? string.replace(reRegExpChars, '\\$&')
-    : string;
-}
-
-module.exports = getNative;
-
-},{}],5:[function(require,module,exports){
+},{}],4:[function(require,module,exports){
 var InfiniteComputer = require('./infinite_computer.js'),
     bs = require('../utils/binary_index_search.js');
 
@@ -668,7 +551,7 @@ for(var InfiniteComputer____Key in InfiniteComputer){if(InfiniteComputer.hasOwnP
 module.exports = ArrayInfiniteComputer;
 
 
-},{"../utils/binary_index_search.js":8,"./infinite_computer.js":7}],6:[function(require,module,exports){
+},{"../utils/binary_index_search.js":7,"./infinite_computer.js":6}],5:[function(require,module,exports){
 var InfiniteComputer = require('./infinite_computer.js');
 
 for(var InfiniteComputer____Key in InfiniteComputer){if(InfiniteComputer.hasOwnProperty(InfiniteComputer____Key)){ConstantInfiniteComputer[InfiniteComputer____Key]=InfiniteComputer[InfiniteComputer____Key];}}var ____SuperProtoOfInfiniteComputer=InfiniteComputer===null?null:InfiniteComputer.prototype;ConstantInfiniteComputer.prototype=Object.create(____SuperProtoOfInfiniteComputer);ConstantInfiniteComputer.prototype.constructor=ConstantInfiniteComputer;ConstantInfiniteComputer.__superConstructor__=InfiniteComputer;function ConstantInfiniteComputer(){"use strict";if(InfiniteComputer!==null){InfiniteComputer.apply(this,arguments);}}
@@ -701,7 +584,7 @@ for(var InfiniteComputer____Key in InfiniteComputer){if(InfiniteComputer.hasOwnP
 module.exports = ConstantInfiniteComputer;
 
 
-},{"./infinite_computer.js":7}],7:[function(require,module,exports){
+},{"./infinite_computer.js":6}],6:[function(require,module,exports){
 // An infinite computer must be able to do the following things:
 //  1. getTotalScrollableHeight()
 //  2. getDisplayIndexStart()
@@ -739,7 +622,7 @@ module.exports = ConstantInfiniteComputer;
 module.exports = InfiniteComputer;
 
 
-},{}],8:[function(require,module,exports){
+},{}],7:[function(require,module,exports){
 var opts = {
   CLOSEST_LOWER: 1,
   CLOSEST_HIGHER: 2
