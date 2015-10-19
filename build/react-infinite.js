@@ -8,6 +8,7 @@ var Infinite = React.createClass({displayName: "Infinite",
 
   propTypes: {
     handleScroll: React.PropTypes.func,
+    handleDrawline: React.PropTypes.func,
 
     // preloadBatchSize causes updates only to
     // happen each preloadBatchSize pixels of scrolling.
@@ -41,17 +42,31 @@ var Infinite = React.createClass({displayName: "Infinite",
 
     className: React.PropTypes.string
   },
-
   getDefaultProps:function() {
     return {
       handleScroll: function()  {},
+      handleDrawline: function(start, nb)  {},
       loadingSpinnerDelegate: React.createElement("div", null),
       onInfiniteLoad: function()  {},
       isInfiniteLoading: false,
       timeScrollStateLastsForAfterUserScrolls: 150
     };
   },
+  line_metrics:function(previousState) {
+    if (typeof window !== 'undefined') {
+      var idx = (window.innerHeight + window.scrollY - this.props.containerWindowTop) / this.props.elementHeight;
+      var previous_idx_max = (previousState && previousState.idx_max) || 0;
+      var idx_max = Math.max(previous_idx_max, Math.floor(idx));
 
+      if (previous_idx_max != idx_max) {
+        this.props.handleDrawline(idx_max, (idx_max - previous_idx_max));
+      }
+
+      return {idx:idx, idx_max:idx_max};
+    } else {
+      return {idx: null};
+    }
+  },
   // automatic adjust to scroll direction
   // give spinner a ReactCSSTransitionGroup
   getInitialState:function() {
@@ -60,7 +75,15 @@ var Infinite = React.createClass({displayName: "Infinite",
     var preloadBatchSize = this.getPreloadBatchSizeFromProps(this.props);
     var preloadAdditionalHeight = this.getPreloadAdditionalHeightFromProps(this.props);
 
+    var nb_lines = 0;
+    if (typeof window !== 'undefined') {
+      var nb_lines = Math.round((window.innerHeight + window.scrollY - this.props.containerWindowTop) / this.props.elementHeight);
+    }
+
+    var line_metrics = this.line_metrics({idx_max: nb_lines});
+
     return {
+      line_metrics: line_metrics,
       infiniteComputer: computer,
 
       numberOfChildren: React.Children.count(this.props.children),
@@ -158,7 +181,11 @@ var Infinite = React.createClass({displayName: "Infinite",
         windowTop = Math.max(0, blockStart - this.state.preloadAdditionalHeight),
         windowBottom = Math.min(this.state.infiniteComputer.getTotalScrollableHeight(),
                         blockEnd + this.state.preloadAdditionalHeight)
+
+    var line_metrics = this.line_metrics(this.state.line_metrics);
+
     this.setState({
+      line_metrics: line_metrics,
       displayIndexStart: this.state.infiniteComputer.getDisplayIndexStart(windowTop),
       displayIndexEnd: this.state.infiniteComputer.getDisplayIndexEnd(windowBottom)
     });
@@ -231,6 +258,8 @@ var Infinite = React.createClass({displayName: "Infinite",
   },
 
   componentDidMount: function () {
+    this.props.handleDrawline(1, this.state.line_metrics.idx_max);
+
     if(this.props.containerWindowTop){window.addEventListener('scroll', this.infiniteHandleScroll)}
   },
 
@@ -251,17 +280,17 @@ var Infinite = React.createClass({displayName: "Infinite",
 
     // topSpacer and bottomSpacer take up the amount of space that the
     // rendered elements would have taken up otherwise
-    return React.createElement("div", {className: this.props.className ? this.props.className : '', 
-                ref: "scrollable", 
-                style: this.buildScrollableStyle(), 
-                onScroll: this.infiniteHandleScroll}, 
-      React.createElement("div", {ref: "smoothScrollingWrapper", style: infiniteScrollStyles}, 
-        React.createElement("div", {ref: "topSpacer", 
-             style: this.buildHeightStyle(topSpacerHeight)}), 
-            displayables, 
-        React.createElement("div", {ref: "bottomSpacer", 
-             style: this.buildHeightStyle(bottomSpacerHeight)}), 
-        React.createElement("div", {ref: "loadingSpinner"}, 
+    return React.createElement("div", {className: this.props.className ? this.props.className : '',
+                ref: "scrollable",
+                style: this.buildScrollableStyle(),
+                onScroll: this.infiniteHandleScroll},
+      React.createElement("div", {ref: "smoothScrollingWrapper", style: infiniteScrollStyles},
+        React.createElement("div", {ref: "topSpacer",
+             style: this.buildHeightStyle(topSpacerHeight)}),
+            displayables,
+        React.createElement("div", {ref: "bottomSpacer",
+             style: this.buildHeightStyle(bottomSpacerHeight)}),
+        React.createElement("div", {ref: "loadingSpinner"},
              this.state.isInfiniteLoading ? this.props.loadingSpinnerDelegate : null
         )
       )
